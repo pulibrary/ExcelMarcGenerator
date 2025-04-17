@@ -1,6 +1,10 @@
 # Excel MARC Generator Plugin
 
-This plugin allows you to generate MARC records from the data in an Excel spreadsheet.  This is done by creating profiles that map columns in the spreadsheet to fields of the record, as well as manipulating this data using Excel functions.  After installing the plugin, the Excel ribbon should have a tab called “Library Tools”, with a button called “Create MARC Records”.
+This plugin allows you to generate MARC records from the data in an Excel spreadsheet.  This is done by creating profiles that map columns in the spreadsheet to fields of the record, as well as manipulating this data using Excel functions.  To install, download and run the following installer:
+
+<a href="https://github.com/pulibrary/ExcelMarcGenerator/releases/latest/download/ExcelMARCInstaller.exe">ExcelMARCInstaller.exe</a>
+
+After installing the plugin, the Excel ribbon should have a tab called “Library Tools”, with a button called “Create MARC Records”.
  
  <img src='./img/button.png'>
 
