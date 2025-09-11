@@ -1,17 +1,191 @@
-Attribute VB_Name = "MARCWindow"
-Attribute VB_Base = "0{04FA21DE-EAF8-4FCD-996D-12E2FD6E3CE1}{CA89C330-AF81-4E80-8A90-1568CFD6E311}"
-Attribute VB_GlobalNameSpace = False
-Attribute VB_Creatable = False
-Attribute VB_PredeclaredId = True
-Attribute VB_Exposed = False
-Attribute VB_TemplateDerived = False
-Attribute VB_Customizable = False
-Private Sub Label15_Click()
+Private Sub ExportProfileButton_Click()
+    ProfileSelector.OKButton.Caption = "Export"
+    ProfileSelector.ProfileSelectorList.List = MARCWindow.ProfileComboBox.List
+    ProfileSelector.Show
+End Sub
+
+
+Private Sub ImportProfileButton_Click()
+    With ProfileSelector
+        .sFileName = ""
+        .sDefaultFileName = "ProfileExport.tab"
+        .OKButton.Caption = "Import"
+        .sFileName = Application.GetOpenFilename( _
+            FileFilter:="Tab-delimited file (*.tab), *.tab")
+        If .sFileName = "" Then
+            MsgBox ("Error opening file: no filename given")
+            Exit Sub
+        End If
+        Set .oInputLines = New Collection
+        Set .oProfileNames = New Collection
+        
+        iFile = FreeFile
+        Open .sFileName For Input As iFile
+        sInputLine = ""
+        Do While Not EOF(iFile)
+            Line Input #iFile, sInputLine
+            .oInputLines.Add sInputLine
+            aFields = Split(sInputLine, Chr(9))
+            On Error Resume Next
+            .oProfileNames.Add aFields(0), aFields(0)
+            On Error GoTo 0
+        Loop
+        
+        .ProfileSelectorList.Clear
+        For Each sProfileName In .oProfileNames
+            .ProfileSelectorList.AddItem sProfileName
+        Next sProfileName
+        
+        Close #iFile
+        .Show
+    End With
+End Sub
+
+Private Sub MARCPreviewBox_Click()
 
 End Sub
 
-Private Sub Label9_Click()
+Private Sub ProfileListBox_Change()
+    With ProfileListBox
+    iSelected = -1
+    For i = 0 To UBound(.List)
+        If .Selected(i) = True Then
+            iSelected = i
+            Exit For
+        End If
+    Next i
+    If iSelected = 0 Then
+        MARCWindow.MoveFieldUpButton.Enabled = False
+        MARCWindow.MoveFieldDownButton.Enabled = True
+    ElseIf iSelected = UBound(.List) Then
+        MARCWindow.MoveFieldUpButton.Enabled = True
+        MARCWindow.MoveFieldDownButton.Enabled = False
+    ElseIf iSelected = -1 Then
+        MARCWindow.MoveFieldUpButton.Enabled = False
+        MARCWindow.MoveFieldDownButton.Enabled = False
+    Else
+        MARCWindow.MoveFieldUpButton.Enabled = True
+        MARCWindow.MoveFieldDownButton.Enabled = True
+    End If
+    End With
+ 
+End Sub
 
+Private Sub MoveField(bDown As Boolean)
+    sSelProfile = MARCWindow.ProfileComboBox.Value
+    With MARCWindow.ProfileListBox
+    iSelected = -1
+    iLower = 0
+    iUpper = UBound(.List) - 1
+    If Not bDown Then
+        iLower = iLower + 1
+        iUpper = iUpper + 1
+    End If
+    
+    For i = iLower To iUpper
+        If .Selected(i) = True Then
+            iSelected = i
+            Exit For
+        End If
+    Next i
+    End With
+    If iSelected = -1 Then
+        Exit Sub
+    End If
+    
+    iSelected = iSelected + 1
+    
+    iMaxProfileRow = 1
+    Do While Len(ThisWorkbook.Worksheets("Profiles").Cells(iMaxProfileRow, 1)) > 0
+        iMaxProfileRow = iMaxProfileRow + 1
+    Loop
+    
+    iLastRow = 0
+    iProfileIndex = 1
+    
+    For i = 1 To iMaxProfileRow - 1
+        iLastRow = i
+        sProfile = ThisWorkbook.Worksheets("Profiles").Range("A2").Cells(i, 1).Value
+        If StrComp(sProfile, "") = 0 Then
+            Exit For
+        End If
+        
+         If StrComp(sProfile, sSelProfile, 1) = 0 Then
+            If iProfileIndex = iSelected Then
+                If bDown Then
+                    t1 = ThisWorkbook.Worksheets("Profiles").Range("A2").Cells(i + 1, 8).Value
+                Else
+                    t1 = ThisWorkbook.Worksheets("Profiles").Range("A2").Cells(i - 1, 8).Value
+                End If
+                t2 = ThisWorkbook.Worksheets("Profiles").Range("A2").Cells(i, 8).Value
+                Debug.Print CStr(t1) + " " + CStr(t2)
+                
+                If bDown Then
+                    ThisWorkbook.Worksheets("Profiles").Range("A2").Cells(i + 1, 8).Value = t2
+                Else
+                    ThisWorkbook.Worksheets("Profiles").Range("A2").Cells(i - 1, 8).Value = t2
+                End If
+                ThisWorkbook.Worksheets("Profiles").Range("A2").Cells(i, 8).Value = t1
+                
+                Excel2MARC.UpdateProfileWindow
+                If bDown Then
+                    MARCWindow.ProfileListBox.Selected(iSelected) = True
+                Else
+                    MARCWindow.ProfileListBox.Selected(iSelected - 2) = True
+                End If
+                
+                Exit For
+            End If
+            iProfileIndex = iProfileIndex + 1
+        End If
+    Next i
+End Sub
+
+Private Sub MoveFieldDownButton_Click()
+    MoveField (True)
+End Sub
+
+Private Sub MoveFieldUpButton_Click()
+    MoveField (False)
+End Sub
+
+Private Sub RenameProfileButton_Click()
+    Application.ScreenUpdating = False
+    With MARCWindow.ProfileComboBox
+        sOldProfileName = .List(.ListIndex)
+        sNewProfileName = MARCWindow.NewProfileNameTextBox.Value
+        If StrComp(sNewProfileName, "") = 0 Then
+            MsgBox ("Please enter the new name in 'New Profile Name'")
+        ElseIf StrComp(sOldProfileName, sNewProfileName) = 0 Then
+            MsgBox ("The old and new names are the same.")
+        Else
+            bExists = False
+            iMaxProfileRow = 1
+            Do While Len(ThisWorkbook.Worksheets("Profiles").Cells(iMaxProfileRow, 1)) > 0
+                iMaxProfileRow = iMaxProfileRow + 1
+            Loop
+            For i = 1 To iMaxProfileRow - 1
+              sProfile = ThisWorkbook.Worksheets("Profiles").Cells(i, 1).Value
+              If StrComp(sProfile, sNewProfileName) = 0 Then
+                 MsgBox ("The profile name '" & sProfile & "' already exists")
+                 bExists = True
+                 Exit For
+              End If
+            Next i
+            If Not bExists Then
+                For i = 1 To iMaxProfileRow - 1
+                    sProfile = ThisWorkbook.Worksheets("Profiles").Cells(i, 1).Value
+                    If StrComp(sProfile, sOldProfileName) = 0 Then
+                        ThisWorkbook.Worksheets("Profiles").Cells(i, 1).Value = sNewProfileName
+                    End If
+                Next i
+                Excel2MARC.UpdateProfileList
+                .Value = sNewProfileName
+            End If
+        End If
+    End With
+    ThisWorkbook.Save
+    Application.ScreenUpdating = True
 End Sub
 
 Private Sub UserForm_Initialize()
@@ -19,15 +193,16 @@ Private Sub UserForm_Initialize()
 End Sub
 
 Private Sub AddProfileButton_Click()
+    Application.ScreenUpdating = False
     sDefault000 = "$Lnam#a22$S5u#4500"
     sDefault008 = "$DsDATE####cc######r#########0#chi#d"
     sNewProfileName = MARCWindow.NewProfileNameTextBox.Value
     If StrComp(sNewProfileName, "") = 0 Then
-        MsgBox ("Please give the new profile a name")
+        MsgBox ("Please enter the new name in 'New Profile Name'")
     Else
-        With Workbooks("MARC.xlam").Worksheets("Profiles").Range("A2")
+        With ThisWorkbook.Worksheets("Profiles").Range("A2")
             iMaxProfileRow = 1
-            Do While Len(Workbooks("MARC.xlam").Worksheets("Profiles").Cells(iMaxProfileRow, 1)) > 0
+            Do While Len(ThisWorkbook.Worksheets("Profiles").Cells(iMaxProfileRow, 1)) > 0
                 iMaxProfileRow = iMaxProfileRow + 1
             Loop
             iLastRow = 0
@@ -56,7 +231,8 @@ Private Sub AddProfileButton_Click()
             End If
         Next
     End If
-    Workbooks("MARC.xlam").Save
+    ThisWorkbook.Save
+    Application.ScreenUpdating = True
 End Sub
 
 Private Sub CancelButton_Click()
@@ -78,16 +254,16 @@ Private Sub DeleteEntryButton_Click()
     
     sSelProfile = MARCWindow.ProfileComboBox.Value
     iMaxProfileRow = 1
-    Do While Len(Workbooks("MARC.xlam").Worksheets("Profiles").Cells(iMaxProfileRow, 1)) > 0
+    Do While Len(ThisWorkbook.Worksheets("Profiles").Cells(iMaxProfileRow, 1)) > 0
         iMaxProfileRow = iMaxProfileRow + 1
     Loop
     For i = 1 To iMaxProfileRow - 1
-        sProfile = Workbooks("MARC.xlam").Worksheets("Profiles").Range("A2").Cells(i, 1).Value
-        sProfileField = Workbooks("MARC.xlam").Worksheets("Profiles").Range("A2").Cells(i, 2).Value
-        sProfileSeq = Workbooks("MARC.xlam").Worksheets("Profiles").Range("A2").Cells(i, 3).Value
-        sProfileInd1 = Workbooks("MARC.xlam").Worksheets("Profiles").Range("A2").Cells(i, 4).Value
-        sProfileInd2 = Workbooks("MARC.xlam").Worksheets("Profiles").Range("A2").Cells(i, 5).Value
-        sProfileValue = Workbooks("MARC.xlam").Worksheets("Profiles").Range("A2").Cells(i, 6).Value
+        sProfile = ThisWorkbook.Worksheets("Profiles").Range("A2").Cells(i, 1).Value
+        sProfileField = ThisWorkbook.Worksheets("Profiles").Range("A2").Cells(i, 2).Value
+        sProfileSeq = ThisWorkbook.Worksheets("Profiles").Range("A2").Cells(i, 3).Value
+        sProfileInd1 = ThisWorkbook.Worksheets("Profiles").Range("A2").Cells(i, 4).Value
+        sProfileInd2 = ThisWorkbook.Worksheets("Profiles").Range("A2").Cells(i, 5).Value
+        sProfileValue = ThisWorkbook.Worksheets("Profiles").Range("A2").Cells(i, 6).Value
         If StrComp(sProfile, sSelProfile, 1) = 0 And _
             StrComp(sProfileSeq, sSeq, 1) = 0 And _
             StrComp(sProfileField, sField, 1) = 0 And _
@@ -95,32 +271,30 @@ Private Sub DeleteEntryButton_Click()
             StrComp(sProfileInd2, sInd2, 1) = 0 And _
             StrComp(sProfileValue, sValue, 1) = 0 _
         Then
-            Workbooks("MARC.xlam").Worksheets("Profiles").Rows(i + 1).EntireRow.Delete xlShiftUp
+            ThisWorkbook.Worksheets("Profiles").Rows(i + 1).EntireRow.Delete xlShiftUp
+            If iSel > 0 Then
+                MARCWindow.ProfileListBox.ListIndex = iSel - 1
+            Else
+                MARCWindow.ProfileListBox.ListIndex = 0
+            End If
+            ThisWorkbook.Save
+            Excel2MARC.UpdateProfileWindow
         End If
-        If iSel > 0 Then
-            MARCWindow.ProfileListBox.ListIndex = iSel - 1
-        Else
-           MARCWindow.ProfileListBox.ListIndex = 0
-        End If
-        Excel2MARC.UpdateProfileWindow
     Next
-    Workbooks("MARC.xlam").Save
     FieldTextBox.SetFocus
 End Sub
 
-
-
-
 Private Sub DeleteProfileButton_Click()
+    Application.ScreenUpdating = False
     sSelProfile = MARCWindow.ProfileComboBox.Value
     iMaxProfileRow = 1
-    Do While Len(Workbooks("MARC.xlam").Worksheets("Profiles").Cells(iMaxProfileRow, 1)) > 0
+    Do While Len(ThisWorkbook.Worksheets("Profiles").Cells(iMaxProfileRow, 1)) > 0
         iMaxProfileRow = iMaxProfileRow + 1
     Loop
     i = 1
     Do While i < iMaxProfileRow + 1
-        If StrComp(Workbooks("MARC.xlam").Worksheets("Profiles").Range("A2").Cells(i, 1).Value, sSelProfile, 1) = 0 Then
-            Workbooks("MARC.xlam").Worksheets("Profiles").Rows(i + 1).EntireRow.Delete xlShiftUp
+        If StrComp(ThisWorkbook.Worksheets("Profiles").Range("A2").Cells(i, 1).Value, sSelProfile, 1) = 0 Then
+            ThisWorkbook.Worksheets("Profiles").Rows(i + 1).EntireRow.Delete xlShiftUp
             iMaxProfileRow = iMaxProfileRow - 1
         Else
             i = i + 1
@@ -128,21 +302,10 @@ Private Sub DeleteProfileButton_Click()
     Loop
     MARCWindow.ProfileComboBox.ListIndex = 0
     Excel2MARC.UpdateProfileList
-    Workbooks("MARC.xlam").Save
+    ThisWorkbook.Save
+    Application.ScreenUpdating = True
 End Sub
 
-Private Sub FieldTextBox_Change()
-
-End Sub
-
-Private Sub Frame1_Click()
-
-End Sub
-
-
-Private Sub MARCPreviewBox_Click()
-
-End Sub
 
 Private Sub PreviewListBox_Change()
     If Excel2MARC.bEvents Then
@@ -170,9 +333,6 @@ Private Sub ProfileListBox_Click()
     
 End Sub
 
-Private Sub ProfilesComboBox_Change()
-
-End Sub
 
 Private Sub SelectAllButton_Click()
     Excel2MARC.bEvents = False
@@ -180,14 +340,6 @@ Private Sub SelectAllButton_Click()
         MARCWindow.PreviewListBox.Selected(i) = True
     Next
     Excel2MARC.bEvents = True
-    Excel2MARC.UpdateMARCPreview
-End Sub
-
-Private Sub SelectAllButton_MouseDown(ByVal Button As Integer, ByVal Shift As Integer, ByVal x As Single, ByVal y As Single)
-
-End Sub
-
-Private Sub TitleRowCheckBox_Click()
     Excel2MARC.UpdateMARCPreview
 End Sub
 
@@ -199,7 +351,7 @@ Private Sub UpdateEntryButton_Click()
     sInd2 = MARCWindow.Ind2TextBox.Value
     sValue = MARCWindow.ValueTextBox.Value
     iMaxProfileRow = 1
-    Do While Len(Workbooks("MARC.xlam").Worksheets("Profiles").Cells(iMaxProfileRow, 1)) > 0
+    Do While Len(ThisWorkbook.Worksheets("Profiles").Cells(iMaxProfileRow, 1)) > 0
         iMaxProfileRow = iMaxProfileRow + 1
     Loop
     
@@ -213,9 +365,9 @@ Private Sub UpdateEntryButton_Click()
     iLastRow = 0
     For i = 1 To iMaxProfileRow - 1
         iLastRow = i
-        sProfile = Workbooks("MARC.xlam").Worksheets("Profiles").Range("A2").Cells(i, 1).Value
-        sProfileField = Workbooks("MARC.xlam").Worksheets("Profiles").Range("A2").Cells(i, 2).Value
-        sProfileSeq = Workbooks("MARC.xlam").Worksheets("Profiles").Range("A2").Cells(i, 3).Value
+        sProfile = ThisWorkbook.Worksheets("Profiles").Range("A2").Cells(i, 1).Value
+        sProfileField = ThisWorkbook.Worksheets("Profiles").Range("A2").Cells(i, 2).Value
+        sProfileSeq = ThisWorkbook.Worksheets("Profiles").Range("A2").Cells(i, 3).Value
         If StrComp(sProfile, "") = 0 Then
             Exit For
         End If
@@ -231,9 +383,9 @@ Private Sub UpdateEntryButton_Click()
             StrComp(sProfileField, sField, 1) = 0 And _
             StrComp(sProfileSeq, sSeq, 1) = 0 _
         Then
-            Workbooks("MARC.xlam").Worksheets("Profiles").Range("A2").Cells(i, 4).Value = sInd1
-            Workbooks("MARC.xlam").Worksheets("Profiles").Range("A2").Cells(i, 5).Value = sInd2
-            Workbooks("MARC.xlam").Worksheets("Profiles").Range("A2").Cells(i, 6).Value = sValue
+            ThisWorkbook.Worksheets("Profiles").Range("A2").Cells(i, 4).Value = sInd1
+            ThisWorkbook.Worksheets("Profiles").Range("A2").Cells(i, 5).Value = sInd2
+            ThisWorkbook.Worksheets("Profiles").Range("A2").Cells(i, 6).Value = sValue
             Excel2MARC.UpdateProfileWindow
             bFound = True
             Exit For
@@ -243,12 +395,12 @@ Private Sub UpdateEntryButton_Click()
         sSeq = iMaxSeq + 1
     End If
     If Not bFound Then
-        Workbooks("MARC.xlam").Worksheets("Profiles").Range("A2").Cells(iLastRow, 1).Value = sSelProfile
-        Workbooks("MARC.xlam").Worksheets("Profiles").Range("A2").Cells(iLastRow, 2).Value = sField
-        Workbooks("MARC.xlam").Worksheets("Profiles").Range("A2").Cells(iLastRow, 3).Value = sSeq
-        Workbooks("MARC.xlam").Worksheets("Profiles").Range("A2").Cells(iLastRow, 4).Value = sInd1
-        Workbooks("MARC.xlam").Worksheets("Profiles").Range("A2").Cells(iLastRow, 5).Value = sInd2
-        Workbooks("MARC.xlam").Worksheets("Profiles").Range("A2").Cells(iLastRow, 6).Value = sValue
+        ThisWorkbook.Worksheets("Profiles").Range("A2").Cells(iLastRow, 1).Value = sSelProfile
+        ThisWorkbook.Worksheets("Profiles").Range("A2").Cells(iLastRow, 2).Value = sField
+        ThisWorkbook.Worksheets("Profiles").Range("A2").Cells(iLastRow, 3).Value = sSeq
+        ThisWorkbook.Worksheets("Profiles").Range("A2").Cells(iLastRow, 4).Value = sInd1
+        ThisWorkbook.Worksheets("Profiles").Range("A2").Cells(iLastRow, 5).Value = sInd2
+        ThisWorkbook.Worksheets("Profiles").Range("A2").Cells(iLastRow, 6).Value = sValue
         Excel2MARC.UpdateProfileWindow
     End If
     c = ProfileListBox.ListCount
@@ -260,10 +412,6 @@ Private Sub UpdateEntryButton_Click()
             Exit For
         End If
     Next
-    Workbooks("MARC.xlam").Save
+    ThisWorkbook.Save
     FieldTextBox.SetFocus
-End Sub
-
-Private Sub UserForm_Click()
-
 End Sub

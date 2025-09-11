@@ -1,9 +1,21 @@
-Attribute VB_Name = "Excel2MARC"
 Public bEvents As Boolean
 Public iMaxColumn As Integer
 Public iMaxRow As Integer
+Global oXMLHTTP As Object
+
+Public Const sVersion = "v0.1.2"
+Public Const sRepoURL = "https://github.com/pulibrary/ExcelMarcGenerator"
+
+Private Sub Initialize()
+   On Error GoTo ErrHandler
+    Set oXMLHTTP = CreateObject("MSXML2.ServerXMLHTTP")
+    Exit Sub
+ErrHandler:
+    MsgBox ("There was an error initializing the plugin.  Please try again.")
+End Sub
 
 Sub makeMARC(control As IRibbonControl)
+    Application.ScreenUpdating = False
     If Right(ActiveWorkbook.FullName, 4) = ".xls" Then
         iResult = MsgBox("File must be in XLSX format.  Convert Now?", vbYesNo, "Question")
         If iResult = vbYes Then
@@ -16,47 +28,81 @@ Sub makeMARC(control As IRibbonControl)
             Exit Sub
         End If
     End If
-
     iMaxColumn = ActiveSheet.Range("A1").SpecialCells(xlCellTypeLastCell).Column
     MARCWindow.PreviewListBox.ColumnCount = iMaxColumn
-    
     Application.DisplayAlerts = False
-    Workbooks("MARC.xlam").Worksheets("Scratch").Delete
-    Workbooks("MARC.xlam").Worksheets.Add().Name = "Scratch"
+    ThisWorkbook.Worksheets("Scratch").Delete
+    ThisWorkbook.Worksheets.Add().Name = "Scratch"
     iMaxRow = 1
-    
     bEvents = False
     UpdateProfileList (False)
-    MARCWindow.ProfileComboBox.ListIndex = Workbooks("MARC.xlam").Worksheets("Profiles").Cells(1, 7)
+    MARCWindow.ProfileComboBox.ListIndex = ThisWorkbook.Worksheets("Profiles").Cells(1, 7)
     UpdateProfileWindow
     bEvents = True
-    
     For i = 1 To iMaxColumn
         iLocalLastRow = ActiveSheet.Range(Cells(65534, i), Cells(65534, i)).End(xlUp).Row
         If iLocalLastRow > iMaxRow Then
             iMaxRow = iLocalLastRow
         End If
     Next
-    
     If iMaxRow < Selection.Row + Selection.Rows.Count - 1 Then
         ActiveSheet.Range(Rows(Selection.Row), Rows(iMaxRow)).Select
     End If
     Selection.Cells.EntireRow.Copy
-    Workbooks("MARC.xlam").Worksheets("Scratch").Range("A2").PasteSpecial Paste:=xlPasteValuesAndNumberFormats
-    MARCWindow.PreviewListBox.RowSource = "[MARC.xlam]Scratch!2:" & (Selection.Rows.Count + 1)
+    ThisWorkbook.Worksheets("Scratch").Range("A2").PasteSpecial Paste:=xlPasteValuesAndNumberFormats
+    
+    MARCWindow.PreviewListBox.RowSource = ThisWorkbook.Worksheets("Scratch").Range(Cells(2, 1).Address, Cells(Selection.Rows.Count + 1, iMaxColumn).Address).Address(0, 0, xlA1, True)
+    'MARCWindow.PreviewListBox.RowSource = "[MARC.xlam]Scratch!2:" & (Selection.Rows.Count + 1)
     MARCWindow.PreviewListBox.ListIndex = 0
     For i = 0 To MARCWindow.PreviewListBox.ListCount - 1
         If MARCWindow.PreviewListBox.Selected(i) Then
             MARCWindow.PreviewListBox.Selected(i) = False
         End If
     Next i
-    
-    
     UpdateMARCPreview
     MARCWindow.ConvertButton.SetFocus
+    Application.ScreenUpdating = True
+    
+    
+    sLatestVersion = GetLatestVersionNumber
+    If sLatestVersion = sVersion Then
+        MARCWindow.VersionLabel.Caption = "You are using the latest version. (" & sVersion & ")"
+    ElseIf StrComp(sLatestVersion, sVersion) < 0 Then
+        MARCWindow.VersionLabel.Caption = "You are using a pre-release version. (" & sVersion & ")"
+    Else
+        MARCWindow.VersionLabel.Caption = "A newer version is available! (" & sLatestVersion & ")"
+    End If
+    
     MARCWindow.Show
         
 End Sub
+
+Function GetLatestVersionNumber()
+    If oXMLHTTP Is Nothing Then
+        Initialize
+    End If
+    
+    sAPIUrl = Replace(sRepoURL, "github.com", "api.github.com/repos") & "/releases/latest"
+    sTagLabel = "tag_name"
+    With oXMLHTTP
+        .Open "GET", sAPIUrl, True
+        .Send
+        Do While .readyState <> 4
+            DoEvents
+        Loop
+        GetLatestVersionNumber = sVersion
+        If .Status = 200 Then
+            iTagStart = InStr(1, .responseText, sTagLabel)
+            iTagStart = iTagStart + Len(sTagLabel & """:""")
+            If iTagStart > 0 Then
+                iTagEnd = InStr(iTagStart, .responseText, """")
+                If iTagEnd > 0 Then
+                    GetLatestVersionNumber = Mid(.responseText, iTagStart, iTagEnd - iTagStart)
+                End If
+            End If
+        End If
+    End With
+End Function
 
 Sub UpdateColumnHeaders()
     Dim RegEx
@@ -68,7 +114,7 @@ Sub UpdateColumnHeaders()
     End With
     
     sWidths = ""
-    With Workbooks("MARC.xlam").Worksheets("Profiles")
+    With ThisWorkbook.Worksheets("Profiles")
         ReDim aColumns(1 To iMaxColumn) As String
         For iCol = 1 To iMaxColumn
             sResult = ""
@@ -93,12 +139,14 @@ Sub UpdateColumnHeaders()
             If sResult <> "" Then
                 sResult = "(" & sResult & ")"
             End If
-            Workbooks("MARC.xlam").Worksheets("Scratch").Cells(1, iCol) = "Column " & iCol & " " & sResult
+            ThisWorkbook.Worksheets("Scratch").Cells(1, iCol) = "Column " & iCol & " " & sResult
             sWidths = sWidths & Application.International(xlRowSeparator) & CStr(50 + (Len(sResult) * 4))
         Next iCol
     End With
-    MARCWindow.PreviewListBox.RowSource = "[MARC.xlam]Scratch!2:" & (iMaxRow + 1)
+    MARCWindow.PreviewListBox.RowSource = ThisWorkbook.Worksheets("Scratch").Range(Cells(2, 1).Address, Cells(iMaxRow + 1, iMaxColumn).Address).Address(0, 0, xlA1, True)
+    'MARCWindow.PreviewListBox.RowSource = "[MARC.xlam]Scratch!2:" & (iMaxRow + 1)
     sWidths = Mid(sWidths, 2)
+    'Debug.Print sWidths
     MARCWindow.PreviewListBox.ColumnWidths = sWidths
 End Sub
 
@@ -122,16 +170,16 @@ Function UpdateProfileList(Optional bUpdateWindow = True)
         End If
         
        iMaxProfileRow = 1
-        Do While Len(Workbooks("MARC.xlam").Worksheets("Profiles").Cells(iMaxProfileRow, 1)) > 0
+        Do While Len(ThisWorkbook.Worksheets("Profiles").Cells(iMaxProfileRow, 1)) > 0
             iMaxProfileRow = iMaxProfileRow + 1
         Loop
-        Workbooks("MARC.xlam").Worksheets("Profiles").Range("A1:I" & iMaxProfileRow).Sort _
-            Key1:=Workbooks("MARC.xlam").Worksheets("Profiles").Columns("A"), _
+        ThisWorkbook.Worksheets("Profiles").Range("A1:I" & iMaxProfileRow).Sort _
+            Key1:=ThisWorkbook.Worksheets("Profiles").Columns("A"), _
             Order1:=xlAscending, _
             Header:=xlYes
         For i = 1 To iMaxProfileRow
             bMatch = False
-            sProfile = Workbooks("MARC.xlam").Worksheets("Profiles").Range("A2").Cells(i, 1)
+            sProfile = ThisWorkbook.Worksheets("Profiles").Range("A2").Cells(i, 1)
             If sProfile <> sPrevProfile And sProfile <> "" Then
                 For j = 0 To .ListCount - 1
                     If StrComp(.List(j), sProfile, vbTextCompare) = 1 Then
@@ -149,7 +197,7 @@ Function UpdateProfileList(Optional bUpdateWindow = True)
         If (.ListIndex < 0) Then
             .ListIndex = 0
         End If
-        Workbooks("MARC.xlam").Worksheets("Profiles").Cells(1, 7) = .ListIndex
+        ThisWorkbook.Worksheets("Profiles").Cells(1, 7) = .ListIndex
     End With
     If bUpdateWindow Then
         UpdateProfileWindow
@@ -157,39 +205,64 @@ Function UpdateProfileList(Optional bUpdateWindow = True)
 End Function
 
 Sub UpdateProfileWindow()
+    Dim ProfilesSheet As Worksheet
+    Set ProfilesSheet = ThisWorkbook.Worksheets("Profiles")
     With MARCWindow.ProfileListBox
         sSelProfile = MARCWindow.ProfileComboBox.Value
         iMaxProfileRow = 1
-        Do While Len(Workbooks("MARC.xlam").Worksheets("Profiles").Cells(iMaxProfileRow, 1)) > 0
+        Do While Len(ProfilesSheet.Cells(iMaxProfileRow, 1)) > 0
             iMaxProfileRow = iMaxProfileRow + 1
         Loop
         iProfileRows = 0
         For i = 1 To iMaxProfileRow - 1
-            sProfile = Workbooks("MARC.xlam").Worksheets("Profiles").Range("A2").Cells(i, 1).Value
+            sProfile = ProfilesSheet.Range("A2").Cells(i, 1).Value
             If sProfile <> "" Then
                 If StrComp(sProfile, sSelProfile, 1) = 0 Then
                    iProfileRows = iProfileRows + 1
-                   Workbooks("MARC.xlam").Worksheets("Profiles").Range("A2").Cells(i, 7) = 1
+                   ProfilesSheet.Range("A2").Cells(i, 7) = 1
                 Else
-                   Workbooks("MARC.xlam").Worksheets("Profiles").Range("A2").Cells(i, 7) = 0
+                   ProfilesSheet.Range("A2").Cells(i, 7) = 0
                 End If
             End If
         Next
-        With Workbooks("MARC.xlam").Worksheets("Profiles")
-        iMaxProfileRow = .Range("A1").SpecialCells(xlCellTypeLastCell).Row
-        .Range("A1:H" & iMaxProfileRow).Sort _
-            Key1:=.Columns("G"), _
-            Order1:=xlDescending, _
-            Key2:=.Columns("B"), _
-            Order2:=xlAscending, _
-            Key3:=.Columns("C"), _
-            Order3:=xlAscending, _
-            Header:=xlYes
+        With ProfilesSheet
+            iMaxProfileRow = .Range("A1").SpecialCells(xlCellTypeLastCell).Row
+            
+            .Range("A1:H" & iMaxProfileRow).Sort _
+                Key1:=.Columns("C"), _
+                Order1:=xlAscending, _
+                Header:=xlYes
+
+            .Range("A1:H" & iMaxProfileRow).Sort _
+                Key1:=.Columns("G"), _
+                Order1:=xlDescending, _
+                Key2:=.Columns("H"), _
+                Order2:=xlAscending, _
+                Key3:=.Columns("B"), _
+                Order3:=xlAscending, _
+                Header:=xlYes
+            
+            iMaxOrderNum = 0
+            For i = 1 To iMaxProfileRow
+                If .Cells(i, 7) = 1 Then
+                    If .Cells(i, 8) <> "" And .Cells(i, 8) <> "Order" Then
+                        If .Cells(i, 8) > iMaxOrderNum Then
+                            iMaxOrderNum = .Cells(i, 8)
+                        End If
+                    Else
+                        .Cells(i, 8) = iMaxOrderNum + 1
+                        iMaxOrderNum = iMaxOrderNum + 1
+                    End If
+                End If
+            Next i
         End With
         If (iProfileRows > 0) Then
-            MARCWindow.ProfileListBox.RowSource = "[MARC.xlam]Profiles!B2:F" & iProfileRows + 1
+            sRange = "B2:F" & (iProfileRows + 1)
+            MARCWindow.ProfileListBox.RowSource = ProfilesSheet.Range(sRange).Address(0, 0, xlA1, True)
         End If
     End With
+    MARCWindow.MoveFieldUpButton.Enabled = False
+    MARCWindow.MoveFieldDownButton.Enabled = False
     UpdateColumnHeaders
     UpdateMARCPreview
 End Sub
@@ -203,7 +276,7 @@ Function UTF8Size(sString As String) As Integer
     UTFStream.Open
     UTFStream.WriteText sString, 0
     UTFStream.Flush
-    UTF8Size = UTFStream.Size - 3
+    UTF8Size = UTFStream.size - 3
 End Function
 
 Function ResolveVariablesLeader(sLeader As String, sDirectory As String, sRecord As String) As String
@@ -217,11 +290,11 @@ Function ResolveVariablesLeader(sLeader As String, sDirectory As String, sRecord
     
     RegEx.Pattern = "\$L"
     sRecLen = Format(UTF8Size(sRecord) + UTF8Size(sDirectory) + 24 + 2, "00000")
-    sLeader = RegEx.Replace(sLeader, sRecLen)
+    sLeader = RegEx.Replace(sLeader, (sRecLen))
     
     RegEx.Pattern = "\$S"
-    sStartPos = Format(UTF8Size(sDirectory) + 24 + 1 + 1, "00000")
-    sLeader = RegEx.Replace(sLeader, sStartPos)
+    sStartPos = Format(UTF8Size(sDirectory) + 24 + 1, "00000")
+    sLeader = RegEx.Replace(sLeader, (sStartPos))
     sLeader = Replace(sLeader, ChrW(-257), "")
     ResolveVariablesLeader = sLeader
 
@@ -239,10 +312,10 @@ Function ResolveVariables(sField As String, iRow As Integer) As String
     RegEx.Pattern = "\$([0-9]+)\[([0-9]+),([0-9]+)\]"
     Set aMatches = RegEx.Execute(sField)
     For Each sMatch In aMatches
-        sString = sMatch.subMatches(0)
+        sString = sMatch.Submatches(0)
         iCol = Int(sString)
-        sCol = Workbooks("MARC.xlam").Worksheets("Scratch").Range("A2").Cells(iRow + 1, iCol).Value
-        sFormat = Workbooks("MARC.xlam").Worksheets("Scratch").Range("A2").Cells(iRow + 1, iCol).NumberFormat
+        sCol = ThisWorkbook.Worksheets("Scratch").Range("A2").Cells(iRow + 1, iCol).Value
+        sFormat = ThisWorkbook.Worksheets("Scratch").Range("A2").Cells(iRow + 1, iCol).NumberFormat
         If StrComp(sFormat, "General") <> 0 Then
             sCol = Format(sCol, sFormat)
         End If
@@ -250,19 +323,19 @@ Function ResolveVariables(sField As String, iRow As Integer) As String
         sString = Replace(sString, "$", "\$")
         sString = Replace(sString, "[", "\[")
         sString = Replace(sString, "]", "\]")
-        sVal = Mid(sCol, sMatch.subMatches(1), sMatch.subMatches(2) - sMatch.subMatches(1) + 1)
+        sVal = Mid(sCol, sMatch.Submatches(1), sMatch.Submatches(2) - sMatch.Submatches(1) + 1)
         sVal = CleanUpColumn(sVal)
         RegEx.Pattern = sString
-        sField = RegEx.Replace(sField, sVal)
+        sField = RegEx.Replace(sField, (sVal))
     Next
     
     RegEx.Pattern = "\$([0-9]+)\[-([0-9]+)\]"
     Set aMatches = RegEx.Execute(sField)
     For Each sMatch In aMatches
-        sString = sMatch.subMatches(0)
+        sString = sMatch.Submatches(0)
         iCol = Int(sString)
-        sCol = Workbooks("MARC.xlam").Worksheets("Scratch").Range("A2").Cells(iRow + 1, iCol).Value
-        sFormat = Workbooks("MARC.xlam").Worksheets("Scratch").Range("A2").Cells(iRow + 1, iCol).NumberFormat
+        sCol = ThisWorkbook.Worksheets("Scratch").Range("A2").Cells(iRow + 1, iCol).Value
+        sFormat = ThisWorkbook.Worksheets("Scratch").Range("A2").Cells(iRow + 1, iCol).NumberFormat
         If StrComp(sFormat, "General") <> 0 Then
             sCol = Format(sCol, sFormat)
         End If
@@ -270,18 +343,18 @@ Function ResolveVariables(sField As String, iRow As Integer) As String
         sString = Replace(sString, "$", "\$")
         sString = Replace(sString, "[", "\[")
         sString = Replace(sString, "]", "\]")
-        sVal = Right(sCol, sMatch.subMatches(1))
+        sVal = Right(sCol, sMatch.Submatches(1))
         sVal = CleanUpColumn(sVal)
-        sField = RegEx.Replace(sField, sVal)
+        sField = RegEx.Replace(sField, (sVal))
     Next
     
     RegEx.Pattern = "\$([0-9]+)\[([0-9]+)\]"
     Set aMatches = RegEx.Execute(sField)
     For Each sMatch In aMatches
-        sString = sMatch.subMatches(0)
+        sString = sMatch.Submatches(0)
         iCol = Int(sString)
-        sCol = Workbooks("MARC.xlam").Worksheets("Scratch").Range("A2").Cells(iRow + 1, iCol).Value
-        sFormat = Workbooks("MARC.xlam").Worksheets("Scratch").Range("A2").Cells(iRow + 1, iCol).NumberFormat
+        sCol = ThisWorkbook.Worksheets("Scratch").Range("A2").Cells(iRow + 1, iCol).Value
+        sFormat = ThisWorkbook.Worksheets("Scratch").Range("A2").Cells(iRow + 1, iCol).NumberFormat
         If StrComp(sFormat, "General") <> 0 Then
             sCol = Format(sCol, sFormat)
         End If
@@ -289,26 +362,26 @@ Function ResolveVariables(sField As String, iRow As Integer) As String
         sString = Replace(sString, "$", "\$")
         sString = Replace(sString, "[", "\[")
         sString = Replace(sString, "]", "\]")
-        sVal = Mid(sCol, sMatch.subMatches(1))
+        sVal = Mid(sCol, sMatch.Submatches(1))
         sVal = CleanUpColumn(sVal)
-        sField = RegEx.Replace(sField, sVal)
+        sField = RegEx.Replace(sField, (sVal))
     Next
 
     RegEx.Pattern = "\$([0-9]+)"
     Set aMatches = RegEx.Execute(sField)
     For Each sMatch In aMatches
-        sString = sMatch.subMatches(0)
+        sString = sMatch.Submatches(0)
         iCol = Int(sString)
-        sCol = Workbooks("MARC.xlam").Worksheets("Scratch").Range("A2").Cells(iRow + 1, iCol).Value
-        sFormat = Workbooks("MARC.xlam").Worksheets("Scratch").Range("A2").Cells(iRow + 1, iCol).NumberFormat
+        sCol = ThisWorkbook.Worksheets("Scratch").Range("A2").Cells(iRow + 1, iCol).Value
+        sFormat = ThisWorkbook.Worksheets("Scratch").Range("A2").Cells(iRow + 1, iCol).NumberFormat
         If StrComp(sFormat, "General") <> 0 Then
             sCol = Format(sCol, sFormat)
         End If
         sCol = CleanUpColumn(sCol)
         RegEx.Pattern = "\" & sMatch & "(?=[^0-9])"
-        sField = RegEx.Replace(sField, sCol)
+        sField = RegEx.Replace(sField, (sCol))
         RegEx.Pattern = "\" & sMatch & "$"
-        sField = RegEx.Replace(sField, sCol)
+        sField = RegEx.Replace(sField, (sCol))
     Next
 
     RegEx.Pattern = "\$D"
@@ -320,15 +393,15 @@ Function ResolveVariables(sField As String, iRow As Integer) As String
     RegEx.Pattern = "{=([^}]+)}"
     Set aMatches = RegEx.Execute(sField)
     While aMatches.Count > 0
-        sFormula = aMatches(aMatches.Count - 1).subMatches(0)
+        sFormula = aMatches(aMatches.Count - 1).Submatches(0)
+        Debug.Print UTF8Size(CStr(sFormula))
         sResult = Application.Evaluate(sFormula)
+        Debug.Print sResult
         sField = Replace(sField, "{=" & sFormula & "}", sResult)
         Set aMatches = RegEx.Execute(sField)
     Wend
-    
+    sField = Replace(sField, Chr(34) & Chr(34), Chr(34))
     ResolveVariables = sField
-    Exit Function
-    
 End Function
 
 Function CleanUpColumn(ByVal sStr As String) As String
@@ -339,6 +412,7 @@ Function CleanUpColumn(ByVal sStr As String) As String
     If Right(sStr, 1) = "_" Then
         sStr = Left(sStr, Len(sStr) - 1)
     End If
+    sStr = Replace(sStr, Chr(34), Chr(34) & Chr(34)) 'Escape quotes
     CleanUpColumn = sStr
 End Function
 
@@ -388,7 +462,7 @@ Sub ConvertToMARC()
         
         
         sDefaultFileName = ActiveWorkbook.FullName
-        sDefaultFileName = RegEx.Replace(sDefaultFileName, "")
+        sDefaultFileName = RegEx.Replace(sDefaultFileName, (""))
         sDefaultFileName = sDefaultFileName & "_" & ActiveSheet.Name & ".mrc"
         Application.DisplayAlerts = True
         sFileSaveName = Application.GetSaveAsFilename( _
@@ -543,12 +617,11 @@ Sub UpdateMARCPreview()
             j = j + 1
         Else
             sValue = ResolveVariables(sValue, Int(iSelected))
-            RegEx.Pattern = "(.)\|"
-            sValue = RegEx.Replace(sValue, "$1 |")
-            
-            RegEx.Pattern = "\|(.)"
-            sValue = RegEx.Replace(sValue, "|$1 ")
 
+            RegEx.Pattern = "(.)\|"
+            sValue = RegEx.Replace(sValue, ("$1 |"))
+            RegEx.Pattern = "\|(.)"
+            sValue = RegEx.Replace(sValue, ("|$1 "))
             If Len(sValue) > 0 Then
                 iLen = UTF8Size(sValue)
                 sDirectory = sDirectory & sField & Format(iLen, "0000") & Format(iPos, "00000")
@@ -558,7 +631,11 @@ Sub UpdateMARCPreview()
                 MARCWindow.MARCPreviewBox.List(j, 0) = MARCWindow.ProfileListBox.List(i, 0)
                 MARCWindow.MARCPreviewBox.List(j, 1) = Left(MARCWindow.ProfileListBox.List(i, 2), 1)
                 MARCWindow.MARCPreviewBox.List(j, 2) = Left(MARCWindow.ProfileListBox.List(i, 3), 1)
-                MARCWindow.MARCPreviewBox.List(j, 3) = sValue
+                If (Len(sValue) > 100) Then
+                    MARCWindow.MARCPreviewBox.List(j, 3) = Left(sValue, 100) & "..."
+                Else
+                    MARCWindow.MARCPreviewBox.List(j, 3) = sValue
+                End If
                 j = j + 1
             End If
         End If
@@ -575,5 +652,4 @@ ErrHandler:
     End If
     Resume Next
 End Sub
-
 
