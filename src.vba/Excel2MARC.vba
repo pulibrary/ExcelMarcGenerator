@@ -3,7 +3,7 @@ Public iMaxColumn As Integer
 Public iMaxRow As Integer
 Global oXMLHTTP As Object
 
-Public Const sVersion = "v0.1.2"
+Public Const sVersion = "v0.1.3"
 Public Const sRepoURL = "https://github.com/pulibrary/ExcelMarcGenerator"
 
 Private Sub Initialize()
@@ -48,10 +48,14 @@ Sub makeMARC(control As IRibbonControl)
     If iMaxRow < Selection.Row + Selection.Rows.Count - 1 Then
         ActiveSheet.Range(Rows(Selection.Row), Rows(iMaxRow)).Select
     End If
+    
     Selection.Cells.EntireRow.Copy
     ThisWorkbook.Worksheets("Scratch").Range("A2").PasteSpecial Paste:=xlPasteValuesAndNumberFormats
     
     MARCWindow.PreviewListBox.RowSource = ThisWorkbook.Worksheets("Scratch").Range(Cells(2, 1).Address, Cells(Selection.Rows.Count + 1, iMaxColumn).Address).Address(0, 0, xlA1, True)
+    MARCWindow.PreviewListBox.IntegralHeight = True
+    MARCWindow.PreviewListBox.IntegralHeight = False
+
     'MARCWindow.PreviewListBox.RowSource = "[MARC.xlam]Scratch!2:" & (Selection.Rows.Count + 1)
     MARCWindow.PreviewListBox.ListIndex = 0
     For i = 0 To MARCWindow.PreviewListBox.ListCount - 1
@@ -394,9 +398,9 @@ Function ResolveVariables(sField As String, iRow As Integer) As String
     Set aMatches = RegEx.Execute(sField)
     While aMatches.Count > 0
         sFormula = aMatches(aMatches.Count - 1).Submatches(0)
-        Debug.Print UTF8Size(CStr(sFormula))
+        'Debug.Print UTF8Size(CStr(sFormula))
         sResult = Application.Evaluate(sFormula)
-        Debug.Print sResult
+        'Debug.Print sResult
         sField = Replace(sField, "{=" & sFormula & "}", sResult)
         Set aMatches = RegEx.Execute(sField)
     Wend

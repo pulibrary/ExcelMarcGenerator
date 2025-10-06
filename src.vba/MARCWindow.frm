@@ -41,9 +41,6 @@ Private Sub ImportProfileButton_Click()
     End With
 End Sub
 
-Private Sub MARCPreviewBox_Click()
-
-End Sub
 
 Private Sub ProfileListBox_Change()
     With ProfileListBox

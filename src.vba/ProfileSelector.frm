@@ -129,6 +129,3 @@ Private Sub OKButton_Click()
     ProfileSelector.Hide
 End Sub
 
-Private Sub UserForm_Click()
-
-End Sub
